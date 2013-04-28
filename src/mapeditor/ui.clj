@@ -2,3 +2,4 @@
 ;;
 ;; User interface stuff
 
+(ns mapeditor.ui)

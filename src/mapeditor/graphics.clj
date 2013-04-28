@@ -2,6 +2,10 @@
 ;;
 ;; Handling of graphics (tiles, metatiles)
 
+(ns mapeditor.graphics
+  (:require [clojure.java.io :as io]
+            [mapeditor.util]))
+
 (def palette-rgb-map
   '[(0x80 0x80 0x80) (0x00 0x3D 0xA6) (0x00 0x12 0xB0) (0x44 0x00 0x96)
   (0xA1 0x00 0x5E) (0xC7 0x00 0x28) (0xBA 0x06 0x00) (0x8C 0x17 0x00)
@@ -32,15 +36,9 @@
     0x00 0x06 0x16 0x38
     0x00 0x09 0x19 0x3B])
 
-(defn split-in-half [seq]
-  (let [n (count seq)
-        s (if (even? n)
-            (/ n 2) (/ (- n 1) 2))]
-    (split-at s seq)))
-
 ;; Graphics loading
 
-(defn read-bytes [filename]
+(defn- read-bytes [filename]
   "Read the bytes in the file given into a byte array"
   (with-open [in-stream (io/input-stream filename)]
     (doall ; this is to force evaluation when the file is open 
@@ -50,54 +48,32 @@
          (.read in-stream bytes)
          bytes)))))
 
-;; A few utility functions for handling bits and bytes
-
-(defn byte->int [byte]
-  "Convert a byte to an unsigned integer"
-  (let [val (int byte)]
-    (if (>= val 0)
-      val
-      (+ val 256))))
-     
-(defn bit-count [x]
-  "Count the number of bits in x"
-  (inc (int (/ (Math/log x)
-               (Math/log 2)))))
-
-(defn get-bit [x n]
-  "Get the nth bit in x"
-  (if (bit-test x n) 1 0))
-
-(defn bit-array [x & [n]]
-  "Get an array of the used bits of x or the n first bits of x"
-  (let [val (byte->int x)]
-    (map #(get-bit val %) (vec (reverse (range (or n (bit-count val))))))))
-
 ;; Tile functions
 
-(defn bytes->tile [bytes]
+(defn- bytes->tile [bytes]
   "Convert a NES format byte to a list of pixel colors (palette indices)"
-  (let [[plane1 plane2] (split-in-half (map #(bit-array % 8) bytes))]
-    (map (fn [row1 row2]
-           (map (fn [bit1 bit2]
-                  (+ (* bit2 2) bit1))
-                row1 row2))
-         plane1 plane2)))
+  (vec
+   (let [[plane1 plane2] (split-in-half (map #(bit-array % 8) bytes))]
+     (map (fn [row1 row2]
+            (vec (map (fn [bit1 bit2]
+                    (+ (* bit2 2) bit1))
+                  row1 row2)))
+          plane1 plane2))))
 
 (defn read-tiles [chr-file]
   "Read all 256 tiles from CHR file"
   (when (= (.length (io/as-file chr-file)) 4096)
     (let [byte-arrays (read-bytes chr-file)]
-      (map bytes->tile byte-arrays))))
+      (vec (map bytes->tile byte-arrays)))))
 
-(defn compose-metatile [tileset metatile-def]
+(defn- compose-metatile [tileset metatile-def]
   "Put together a metatile based on a list of tiles"
   (apply concat
          (map #(map concat (first %) (second %))
               (split-in-half (map #(nth tileset %)
                                   metatile-def)))))
 
-(defn lookup-color [palette palette-number palette-index]
+(defn- lookup-color [palette palette-number palette-index]
   "Take in a palette (sprite or background), palette number and palette index and find the resulting color"
   (nth palette-rgb-map
        (nth palette

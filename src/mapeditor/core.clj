@@ -1,3 +1,5 @@
+;; nothing here yet
+
 (ns mapeditor.core
   (:gen-class))
 
