@@ -14,8 +14,7 @@
     (:object-data (array :number-of-objects
                          [(:x byte)
                           (:y byte)
-                          (:initial-direction byte)
-                          (:id byte)]))
+                          (:direction-and-id byte)]))
    (:trap-list (array :number-of-traps
                       [(:x1 byte)
                        (:y1 byte)
