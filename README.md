@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # mapeditor
 
 FIXME: description
@@ -33,3 +34,9 @@ FIXME: listing of options this app accepts.
 Copyright © 2013 FIXME
 
 Distributed under the Eclipse Public License, the same as Clojure.
+=======
+chip-mapeditor
+==============
+
+Map editor for Chip's Challenge on NES
+>>>>>>> ee31b41816cd52e9242d4dde58b4fd7de98d2d45
