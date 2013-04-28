@@ -2,7 +2,8 @@
 ;; Map stuff
 
 (ns mapeditor.map
-  (:use [mapeditor.util]))
+  (:use [mapeditor.util]
+        [clojure.java.io :as io]))
 
 (def level-format
   '[(:number-of-chips byte)
@@ -11,18 +12,18 @@
     (:level-data (rle 1024))
     (:number-of-objects byte)
     (:object-data (array :number-of-objects
-                         [:x byte
-                          :y byte
-                          :initial-direction byte
-                          :id byte]))
+                         [(:x byte)
+                          (:y byte)
+                          (:initial-direction byte)
+                          (:id byte)]))
    (:trap-list (array :number-of-traps
-                      [:x1 byte
-                       :y1 byte
-                       :x2 byte
-                       :y2 byte]))
+                      [(:x1 byte)
+                       (:y1 byte)
+                       (:x2 byte)
+                       (:y2 byte)]))
    (:teleport-list (array :number-of-teleports
-                          [:x byte
-                           :y byte]))])
+                          [(:x byte)
+                           (:y byte)]))])
    
 (defn- rle-encode [s]
   "RLE encode the sequence s to the form [n1 e1] [n2 e2] ..."
@@ -52,46 +53,63 @@
         (map #(if (number? %) % (list 0xFF (first %) (second %)))
              (rle-encode s)))))
 
+(defmacro take-when-zero [a b]
+  `(if (zero? ~a)
+     ~b ~a))
+
 (defn- rle-decode-binary [bytes byte-count]
   "Decode given binary byte array until byte-count has been reached"
   (loop [i byte-count
          bytes-left bytes
          decoded-bytes []]
-    (if (or (zero? i) (empty? bytes-left))
+    (if (zero? i)
       [decoded-bytes bytes-left]
       (let [head-byte (first bytes-left)]
         (if-not (= (first bytes-left) 0xFF)
           (recur (dec i) (rest bytes-left) (conj decoded-bytes head-byte))
-          (let [repetitions (second bytes-left)
-                value (nth bytes-left 2)]
+          (let [value (second bytes-left)
+                repetitions (take-when-zero (nth bytes-left 2) 256)]
             (recur (- i repetitions)
                    (drop 3 bytes-left)
-                   (into decoded-bytes (repeat repetitions value)))))))))
-   
-(defn unpack-level [binary-data]
+                   (into decoded-bytes (repeat (if (zero? repetitions) 256 repetitions) value)))))))))
+
+(defn- unpack-level [binary-data]
   (letfn
-     [(unpack-array [[rep-count format] binary-data]
+     [(unpack-array [rep-count format binary-data]
         (loop [i rep-count
                bytes binary-data
                data-list ()]
           (if (zero? i)
-            [bytes data-list]
+            [data-list bytes]
             (let [[data bytes-left] (unpack bytes format)]
-              (recur (dec i) bytes (conj data-list data))))))
+              (recur (dec i) bytes-left (conj data-list data))))))
       
       (unpack [binary-data format]
         (loop [level format
                level-structure {}
                bytes binary-data]
-          (let [current-element (first level)
-                [field-name field-type] current-element
-                [data bytes-left]
-                (if (= field-type 'byte)
-                  [(byte->int (first bytes)) (rest bytes)]
-                  (condp = (first field-type)
-                    'array (unpack-array (rest field-type) bytes)
-                    'rle (rle-decode-binary bytes (second field-type))))]
-            (recur (rest level)
-                   (merge {field-name data})
-                   bytes-left))))]
-    (unpack binary-data level-format)))
+          (if (empty? level)
+            [level-structure bytes]
+            (let [current-element (first level)
+                  [field-name field-type] current-element
+                  [data bytes-left] (if (= field-type 'byte)
+                                      [(first bytes) (rest bytes)]
+                                      (condp = (first field-type)
+                                        'array (let [size (get level-structure (second field-type))]
+                                                 (if (zero? size)
+                                                   [nil bytes]
+                                                   (unpack-array (get level-structure (second field-type))
+                                                                 (nth field-type 2)
+                                                                 bytes)))
+                                        'rle (rle-decode-binary bytes (second field-type))))]
+              (recur (rest level)
+                     (merge {field-name data} level-structure)
+                     bytes-left)))))]
+    (first (unpack binary-data level-format))))
+
+(defn load-level [filename]
+  (with-open [in-stream (io/input-stream filename)]
+    (let [file-size (.length (io/as-file filename))
+          bytes (byte-array file-size)]
+      (.read in-stream bytes)
+      (unpack-level (map byte->int (into [] bytes))))))
