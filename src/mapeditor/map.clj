@@ -24,40 +24,29 @@
                           [(:x byte)
                            (:y byte)]))])
    
-(defn- rle-encode [s]
-  "RLE encode the sequence s to the form [n1 e1] [n2 e2] ..."
-  (letfn
-      [(count-consecutive [element sq]
-         (loop [rest-of-seq sq
-                count 0]
-           (if (= element (first rest-of-seq))
-             (recur (rest rest-of-seq)
-                    (inc count))
-             count)))
-       (group-consecutive [sq]
-         (loop [rest-of-seq sq
-                new-seq []]
-           (if (empty? rest-of-seq)
-             new-seq
-             (let [cur-element (first rest-of-seq)
-                   rep-count (count-consecutive cur-element rest-of-seq)]
-               (recur (drop rep-count rest-of-seq)
-                      (conj new-seq (if (= rep-count 1)
-                                      cur-element
-                                      [rep-count cur-element])))))))]
-    (group-consecutive s)))
+(defn- rle-encode
+  "RLE encode the given sequence to the form (n1 e1) (n2 e2) ..."
+  [s]
+  (mapv #(list (count %) (first %))
+       (partition-by identity s)))
 
-(defn- rle-encode-binary [s]
-  (vec (flatten
-        (map #(if (number? %) % (list 0xFF (first %) (second %)))
-             (rle-encode s)))))
+(defn- rle-encode-binary
+  "Encode a sequence to a binary RLE sequence where 0xFF is the RLE identifier"
+  [s]
+  (->> (map #(if (number? %)
+               %
+               (let [[rep-count element] %]
+                 (concat (list 0xFF (mod rep-count 256) element)
+                         (repeat (int (/ rep-count 256))
+                                 (list 0xFF 0 element)))))
+            (rle-encode s))
+       flatten
+       (map uint->byte)
+       byte-array))
 
-(defmacro take-when-zero [a b]
-  `(if (zero? ~a)
-     ~b ~a))
-
-(defn- rle-decode-binary [bytes byte-count]
+(defn- rle-decode-binary
   "Decode given binary byte array until byte-count has been reached"
+  [bytes byte-count]
   (loop [i byte-count
          bytes-left bytes
          decoded-bytes []]
@@ -67,12 +56,14 @@
         (if-not (= (first bytes-left) 0xFF)
           (recur (dec i) (rest bytes-left) (conj decoded-bytes head-byte))
           (let [value (second bytes-left)
-                repetitions (take-when-zero (nth bytes-left 2) 256)]
+                repetitions (if (zero? (nth bytes-left 2)) 0 256)]
             (recur (- i repetitions)
                    (drop 3 bytes-left)
                    (into decoded-bytes (repeat (if (zero? repetitions) 256 repetitions) value)))))))))
 
-(defn- unpack-level [binary-data]
+(defn- unpack-level
+  "Unpack a given level byte-array by following the file format descriptor level-format."
+  [binary-data]
   (letfn
      [(unpack-array [rep-count format binary-data]
         (loop [i rep-count
@@ -83,7 +74,7 @@
             (let [[data bytes-left] (unpack bytes format)]
               (recur (dec i) bytes-left (conj data-list data))))))
       
-      (unpack [binary-data format]
+      (unpack [binary-data format level-structure]
         (loop [level format
                level-structure {}
                bytes binary-data]
@@ -106,7 +97,10 @@
                      bytes-left)))))]
     (first (unpack binary-data level-format))))
 
-(defn load-level [filename]
+
+(defn load-level
+  "Reads a binary level file and decomposes it into a hash map representing the level."
+  [filename]
   (with-open [in-stream (io/input-stream filename)]
     (let [file-size (.length (io/as-file filename))
           bytes (byte-array file-size)]

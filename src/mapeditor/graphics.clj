@@ -38,8 +38,9 @@
 
 ;; Graphics loading
 
-(defn- read-bytes [filename]
+(defn- read-bytes
   "Read the bytes in the file given into a byte array"
+  [filename]
   (with-open [in-stream (io/input-stream filename)]
     (doall ; this is to force evaluation when the file is open 
      (for [i (range 256)
@@ -50,8 +51,9 @@
 
 ;; Tile functions
 
-(defn- bytes->tile [bytes]
+(defn- bytes->tile
   "Convert a NES format byte to a list of pixel colors (palette indices)"
+  [bytes]
   (vec
    (let [[plane1 plane2] (split-in-half (map #(bit-array % 8) bytes))]
      (map (fn [row1 row2]
@@ -60,27 +62,31 @@
                   row1 row2)))
           plane1 plane2))))
 
-(defn read-tiles [chr-file]
+(defn read-tiles
   "Read all 256 tiles from CHR file"
+  [chr-file]
   (when (= (.length (io/as-file chr-file)) 4096)
     (let [byte-arrays (read-bytes chr-file)]
       (vec (map bytes->tile byte-arrays)))))
 
-(defn- compose-metatile [tileset metatile-def]
+(defn- compose-metatile
   "Put together a metatile based on a list of tiles"
+  [tileset metatile-def]
   (apply concat
          (map #(map concat (first %) (second %))
               (split-in-half (map #(nth tileset %)
                                   metatile-def)))))
 
-(defn- lookup-color [palette palette-number palette-index]
+(defn- lookup-color
   "Take in a palette (sprite or background), palette number and palette index and find the resulting color"
+  [palette palette-number palette-index]
   (nth palette-rgb-map
        (nth palette
             (+ palette-index (* palette-number 4)))))
 
-(defn get-block-pixels [tileset palette {offset :tile-offset palette-number :palette}]
+(defn get-block-pixels
   "Get a list of the pixels of a metatile"
+  [tileset palette {offset :tile-offset palette-number :palette}]
   (let [metatile (compose-metatile tileset (range offset (+ offset 4)))]
     (for [row metatile]
       (map #(lookup-color palette palette-number %) row))))
