@@ -46,20 +46,17 @@
 
 (defn- rle-decode-binary
   "Decode given binary byte array until byte-count has been reached"
-  [bytes byte-count]
-  (loop [i byte-count
-         bytes-left bytes
-         decoded-bytes []]
-    (if (zero? i)
-      [decoded-bytes bytes-left]
-      (let [head-byte (first bytes-left)]
-        (if-not (= (first bytes-left) 0xFF)
-          (recur (dec i) (rest bytes-left) (conj decoded-bytes head-byte))
-          (let [value (second bytes-left)
-                repetitions (if (zero? (nth bytes-left 2)) 0 256)]
-            (recur (- i repetitions)
-                   (drop 3 bytes-left)
-                   (into decoded-bytes (repeat (if (zero? repetitions) 256 repetitions) value)))))))))
+  ([bytes byte-count] (rle-decode-binary bytes byte-count []))
+  ([bytes byte-count decoded-bytes]
+     (if (zero? byte-count)
+       [decoded-bytes bytes]
+       (let [[head-byte value rep-count] bytes]
+         (if-not (= head-byte 0xFF)
+           (recur (rest bytes) (dec byte-count) (conj decoded-bytes head-byte))
+           (let [repetitions (if (zero? rep-count) 256 rep-count)]
+             (recur (drop 3 bytes)
+                    (- byte-count repetitions)
+                    (into decoded-bytes (repeat repetitions value)))))))))
 
 (defn- unpack-level
   "Unpack a given level byte-array by following the file format descriptor level-format."
@@ -71,32 +68,28 @@
                data-list ()]
           (if (zero? i)
             [data-list bytes]
-            (let [[data bytes-left] (unpack bytes format)]
+            (let [[data bytes-left] (unpack bytes format {})]
               (recur (dec i) bytes-left (conj data-list data))))))
       
       (unpack [binary-data format level-structure]
-        (loop [level format
-               level-structure {}
-               bytes binary-data]
-          (if (empty? level)
-            [level-structure bytes]
-            (let [current-element (first level)
-                  [field-name field-type] current-element
-                  [data bytes-left] (if (= field-type 'byte)
-                                      [(first bytes) (rest bytes)]
-                                      (condp = (first field-type)
-                                        'array (let [size (get level-structure (second field-type))]
-                                                 (if (zero? size)
-                                                   [nil bytes]
-                                                   (unpack-array (get level-structure (second field-type))
-                                                                 (nth field-type 2)
-                                                                 bytes)))
-                                        'rle (rle-decode-binary bytes (second field-type))))]
-              (recur (rest level)
-                     (merge {field-name data} level-structure)
-                     bytes-left)))))]
-    (first (unpack binary-data level-format))))
-
+        (if (empty? format)
+          [level-structure binary-data]
+          (let [current-element (first format)
+                [field-name field-type] current-element
+                [data bytes-left] (if (= field-type 'byte)
+                                    [(first binary-data) (rest binary-data)]
+                                    (condp = (first field-type)
+                                      'array (let [size (get level-structure (second field-type))]
+                                               (if (zero? size)
+                                                 [nil binary-data]
+                                                 (unpack-array (get level-structure (second field-type))
+                                                               (nth field-type 2)
+                                                               binary-data)))
+                                      'rle (rle-decode-binary binary-data (second field-type))))]
+            (recur bytes-left
+                   (rest format)
+                   (merge {field-name data} level-structure)))))]
+  (first (unpack binary-data level-format {}))))
 
 (defn load-level
   "Reads a binary level file and decomposes it into a hash map representing the level."
